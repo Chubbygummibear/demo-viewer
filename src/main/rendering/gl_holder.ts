@@ -4,6 +4,7 @@ import { CopyShader, get_copy_shader, get_icon_shader, IconShader, ShaderHolder 
 import { RenderingCmd } from "../../player/rendering/commands";
 import { ViewportElement } from "../viewport";
 import { render_maptext } from "./maptext";
+import { BlendMode } from "../../misc/constants";
 
 export class DemoPlayerGlHolder {
 	gl : WebGLRenderingContext;
@@ -338,26 +339,53 @@ export class DemoPlayerGlHolder {
 	// this one was fun - I made test cases in BYOND and took screenshots and tried to reverse-engineer the blending equations from that.
 	// fun fact BYOND uses premultiplied alpha. However, when you 
 	set_blend_mode(blend_mode : number) : void{
-		if(blend_mode == 0) blend_mode = 1;
 		if(blend_mode == this.curr_blend_mode) return;
 		this.curr_blend_mode = blend_mode;
 		const gl = this.gl;
-		if(blend_mode == 2) { // BLEND_ADD
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-		} else if(blend_mode == 3) { // BLEND_SUBTRACT
-			gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
-		} else if(blend_mode == 4) { // BLEND_MULTIPLY
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); // fun fact if you do the math everything cancels out so that the destination alpha doesn't change at all.
-		} else if(blend_mode == 5) { // BLEND_INSET_OVERLAY
-			// TODO figure out if this is actually right
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE)
-		} else { // BLEND_OVERLAY or BLEND_DEFAULT
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		switch(blend_mode){
+			case BlendMode.DEFAULT: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.ADD: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.SUBTRACT: {
+				gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
+				break;
+			}
+			case BlendMode.MULTIPLY: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); // fun fact if you do the math everything cancels out so that the destination alpha doesn't change at all.
+				break;
+			}
+			case BlendMode.INSET_OVERLAY: {
+				// TODO figure out if this is actually right
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE)
+				break;
+			}
+			case BlendMode.ALPHA: {
+				gl.blendEquation(gl.FUNC_ADD);
+				//gl.blendFuncSeparate(gl.DST_COLOR, gl.ZERO, gl.DST_ALPHA, gl.ZERO)
+				gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.ALPHA_INVERTED: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.SRC_COLOR, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			//Just in case there's a weird value we'll use the default
+			default: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
 		}
 	}
 

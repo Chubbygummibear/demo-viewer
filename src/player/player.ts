@@ -454,6 +454,12 @@ export class DemoPlayer {
 			let root_appearance = thing.get_appearance(this, see_invisible);
 			if(!root_appearance || root_appearance.invisibility > see_invisible) continue;
 			if(Appearance.is_lighting_plane(root_appearance.plane) && !this.show_darkness) continue;
+			// if(Appearance.is_lighting_plane(root_appearance.plane))
+			// 	console.log("lighting elements", root_appearance)
+			if(root_appearance.plane == Planes.O_LIGHTING_VISUAL_PLANE)
+				console.log("light", root_appearance, this.ui?.gl_holder)
+			// if(root_appearance.name == "plating")
+			// 	console.log("plating", root_appearance)
 			for(let appearance of Appearance.get_appearance_parts(root_appearance)) {
 				if(!appearance.icon_state_dir) {
 					let dir = this.get_appearance_dir(appearance, buffer.atlas);

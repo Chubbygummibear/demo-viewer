@@ -63,3 +63,16 @@ export const enum SeeInvisibility{
     INVISIBILITY_MAXIMUM = 100,
     INVISIBILITY_ABSTRACT = 101,
 }
+
+export const enum BlendMode {
+	/**
+	 * Also called BLEND_OVERLAY by Byond
+	 */
+	DEFAULT = 1,
+	ADD = 2,
+	SUBTRACT = 3,
+	MULTIPLY = 4,
+	INSET_OVERLAY = 5,
+	ALPHA = 6,
+	ALPHA_INVERTED = 7,
+}

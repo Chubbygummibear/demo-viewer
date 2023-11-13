@@ -1,7 +1,7 @@
 import { normalize_ref } from "../misc/ref";
 import { ReaderAppearance } from "../misc/appearance";
 import { DemoParser } from "./base_parser";
-import { Planes } from "../misc/constants";
+import { BlendMode, Planes } from "../misc/constants";
 
 const MIN_VERSION = 1;
 const MAX_VERSION = 1;
@@ -357,8 +357,24 @@ export class DemoParserText extends DemoParser {
 		if(p.read_next_or_end()) return appearance;
 		if(p.curr() != ';') {
 			appearance.plane = p.read_number();
-			if(appearance.plane == Planes.LIGHTING_PLANE) appearance.blend_mode = 4;
-			else appearance.blend_mode = 0;
+			switch(appearance.plane){
+				 case Planes.EMISSIVE_BLOCKER_PLANE: { 
+					appearance.blend_mode = BlendMode.SUBTRACT;
+					break; 
+				 } 
+				 case Planes.LIGHTING_PLANE: { 
+					appearance.blend_mode = BlendMode.ALPHA; 
+					break; 
+				 }
+				 case Planes.O_LIGHTING_VISUAL_PLANE: { 
+					appearance.blend_mode = BlendMode.ALPHA_INVERTED; 
+					break; 
+				 }
+				 default: { 
+					appearance.blend_mode = BlendMode.DEFAULT;
+					break; 
+				 } 
+			}
 		}
 		if(p.read_next_or_end()) return appearance;
 		if(p.curr() != ';') appearance.dir = p.read_number();

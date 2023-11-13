@@ -542,7 +542,7 @@ export class DemoParserBinary extends DemoParser {
 					if(filter) filters.push(filter);
 				}
 				// Uncomment this once filters are actually being used somewhere
-				//if(filters.length) appearance.filters = filters;
+				if(filters.length) appearance.filters = filters;
 			}
 			appearance.override = !!(daf & 0x40000000);
 			if(daf & 0x80000000) {
