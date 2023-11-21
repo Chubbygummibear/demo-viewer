@@ -52,7 +52,7 @@ export interface AtlasTexMaptext extends BaseRenderingCmd {
 	}[];
 }
 export interface AtlasTexCopyWithin extends BaseRenderingCmd {
-	cmd: "atlestexcopywithin";
+	cmd: "atlastexcopywithin";
 	index:number;
 	parts: {
 		x1: number;

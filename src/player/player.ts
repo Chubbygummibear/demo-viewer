@@ -429,7 +429,11 @@ export class DemoPlayer {
 	draw_buffer = new DrawBuffer();
 	draw_object_list(commands : RenderingCmd[], objects : Renderable[], see_invisible = 60, followview_window? : {x:number,y:number,width:number,height:number}|undefined) {
 		for(let i = 0; i < objects.length; i++) {
-			objects.push(...objects[i].get_floating_overlays(this, see_invisible))
+			const overlays_to_push = objects[i].get_floating_overlays(this, see_invisible);
+			objects.push(...overlays_to_push);
+			// if(overlays_to_push.length>0){
+			// 	console.log("floating overlays getting made", ...overlays_to_push);
+			// }
 		}
 		let buffer = this.draw_buffer;
 		let buffer_index = 0;
@@ -490,6 +494,7 @@ export class DemoPlayer {
 					if(buffer_index >= buffer.get_size()) buffer.expand();
 					buffer.write_appearance(buffer_index++, {
 						layer: appearance.layer,
+						plane: appearance.plane,
 						color_alpha: appearance.color_alpha,
 						color_matrix: appearance.color_matrix,
 						pixel_w: appearance.pixel_w,
@@ -502,6 +507,7 @@ export class DemoPlayer {
 			}
 		}
 		if(buffer_index) {
+			//console.log("buffer_index", buffer_index)
 			buffer.add_draw(commands, 0, buffer_index);
 			buffer_index = 0;
 		}
@@ -974,6 +980,11 @@ export class DemoPlayer {
 	 */
 	set_see_invisible(vision_setting: number = SeeInvisibility.SEE_INVISIBLE_OBSERVER) {
 		this.see_invisible = vision_setting;
+		this.change_counter++;
+	}
+
+	dump_textures() {
+		this.ui?.dump_textures();
 		this.change_counter++;
 	}
 }

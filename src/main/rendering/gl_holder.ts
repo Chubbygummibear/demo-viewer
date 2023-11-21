@@ -4,6 +4,7 @@ import { CopyShader, get_copy_shader, get_icon_shader, IconShader, ShaderHolder 
 import { RenderingCmd } from "../../player/rendering/commands";
 import { ViewportElement } from "../viewport";
 import { render_maptext } from "./maptext";
+import { AppearanceAttributeIndex, BlendMode, Planes } from "../../misc/constants";
 
 export class DemoPlayerGlHolder {
 	gl : WebGLRenderingContext;
@@ -20,6 +21,8 @@ export class DemoPlayerGlHolder {
 	shader : IconShader;
 	shader_matrix : IconShader;
 	shader_copy : CopyShader;
+
+	texture_layers: number[] = [];
 
 	constructor(public ui : DemoPlayerUi) {
 		let canvas = document.createElement("canvas");
@@ -102,6 +105,8 @@ export class DemoPlayerGlHolder {
 		if(gl.canvas.height < target_canvas_height) gl.canvas.height = Math.ceil(target_canvas_height);
 
 		let flushables : ((bmp:ImageBitmap|HTMLCanvasElement) => Promise<void>)[] = [];
+		if(frame_data.length>0)
+			console.log("frame data of process_frame_data", frame_data);
 
 		for(let cmd of frame_data) {
 			/*gl.flush();
@@ -169,7 +174,7 @@ export class DemoPlayerGlHolder {
 					}
 				}
 				gl.bindTexture(gl.TEXTURE_2D, null);
-			} else if(cmd.cmd == "atlestexcopywithin") {
+			} else if(cmd.cmd == "atlastexcopywithin") {
 				let tex = not_null(this.atlas_textures[cmd.index]);
 				let shader = this.shader_copy;
 				this.set_shader(shader);
@@ -224,11 +229,11 @@ export class DemoPlayerGlHolder {
 				gl.enable(gl.SCISSOR_TEST);
 			} else if(cmd.cmd == "batchdraw") {
 				let tex = not_null(this.atlas_textures[cmd.atlas_index]);
+				this.set_active_texture(cmd.data[AppearanceAttributeIndex.ICON_PLANE]);
 				this.set_blend_mode(cmd.blend_mode);
 				let shader = cmd.use_color_matrix ? this.shader_matrix : this.shader;
 				this.set_shader(shader);
 
-				gl.activeTexture(gl.TEXTURE0);
 				gl.bindTexture(gl.TEXTURE_2D, tex.texture);
 				gl.uniform1i(shader.u_texture, 0);
 				gl.uniform2f(shader.u_texture_size, tex.width, tex.height);
@@ -236,18 +241,18 @@ export class DemoPlayerGlHolder {
 				gl.uniform2f(shader.u_viewport_center, (curr_viewport.x+curr_viewport.width/2)*icon_width, (curr_viewport.y+curr_viewport.height/2)*icon_height);
 				gl.uniform1f(shader.u_zoom, 1);
 				
-				let stride = (cmd.use_color_matrix ? 31 : 15) * 4;
+				let stride = (cmd.use_color_matrix ? 32 : 16) * 4;
 				gl.bindBuffer(gl.ARRAY_BUFFER, this.square_buffer);
 				gl.vertexAttribPointer(shader.a_position, 2, gl.FLOAT, false, 0, 0);
 				let buf = gl.createBuffer();
 				gl.bindBuffer(gl.ARRAY_BUFFER, buf);
 				gl.bufferData(gl.ARRAY_BUFFER, cmd.data, gl.STREAM_DRAW);
-				gl.vertexAttribPointer(shader.a_transform_x, 3, gl.FLOAT, false, stride, 0);
-				gl.vertexAttribPointer(shader.a_transform_y, 3, gl.FLOAT, false, stride, 12);
-				gl.vertexAttribPointer(shader.a_uv, 4, gl.FLOAT, false, stride, 24);
-				gl.vertexAttribPointer(shader.a_layer, 1, gl.FLOAT, false, stride, 40);
+				gl.vertexAttribPointer(shader.a_transform_x, 3, gl.FLOAT, false, stride, AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_A*3);
+				gl.vertexAttribPointer(shader.a_transform_y, 3, gl.FLOAT, false, stride, AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_E*3);
+				gl.vertexAttribPointer(shader.a_uv, 4, gl.FLOAT, false, stride, AppearanceAttributeIndex.ICON_BOUND_X_1*4);
+				gl.vertexAttribPointer(shader.a_layer, 1, gl.FLOAT, false, stride, AppearanceAttributeIndex.ICON_LAYER*4);
 				for(let i = 0; i < shader.a_color.length; i++)
-					gl.vertexAttribPointer(shader.a_color[i], 4, gl.FLOAT, false, stride, 44 + i*16);
+					gl.vertexAttribPointer(shader.a_color[i], 4, gl.FLOAT, false, stride, AppearanceAttributeIndex.COLOR_MATRIX_RED*4 + i*16);
 				ia.vertexAttribDivisorANGLE(shader.a_position, 0);
 				for(let i = 0; i < shader.a_color.length; i++)
 					ia.vertexAttribDivisorANGLE(shader.a_color[i], 1);
@@ -256,6 +261,7 @@ export class DemoPlayerGlHolder {
 				ia.vertexAttribDivisorANGLE(shader.a_transform_y, 1);
 				ia.vertexAttribDivisorANGLE(shader.a_layer, 1);
 				ia.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, cmd.num_elements);
+				//console.log("glHolder during batchdraw", cmd)
 				gl.deleteBuffer(buf);
 			} else if(cmd.cmd == "copytoviewport") {
 				let this_viewport_pixel = curr_viewport_pixel;
@@ -312,9 +318,11 @@ export class DemoPlayerGlHolder {
 					ctx.drawImage(bitmap, 0, 0);
 				});
 			} else if(cmd.cmd == "flush") {
+				//console.log("attempting flush", this);
 				if(flushables.length) {
 					let canvas_bitmap = flushables.length == 1 ? gl.canvas : await createImageBitmap(gl.canvas);
 					await Promise.all(flushables.map(f => f(canvas_bitmap)));
+					//console.log("flushing", this);
 				}
 				flushables.length = 0;
 			}
@@ -338,26 +346,53 @@ export class DemoPlayerGlHolder {
 	// this one was fun - I made test cases in BYOND and took screenshots and tried to reverse-engineer the blending equations from that.
 	// fun fact BYOND uses premultiplied alpha. However, when you 
 	set_blend_mode(blend_mode : number) : void{
-		if(blend_mode == 0) blend_mode = 1;
 		if(blend_mode == this.curr_blend_mode) return;
 		this.curr_blend_mode = blend_mode;
 		const gl = this.gl;
-		if(blend_mode == 2) { // BLEND_ADD
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
-		} else if(blend_mode == 3) { // BLEND_SUBTRACT
-			gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
-		} else if(blend_mode == 4) { // BLEND_MULTIPLY
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); // fun fact if you do the math everything cancels out so that the destination alpha doesn't change at all.
-		} else if(blend_mode == 5) { // BLEND_INSET_OVERLAY
-			// TODO figure out if this is actually right
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE)
-		} else { // BLEND_OVERLAY or BLEND_DEFAULT
-			gl.blendEquation(gl.FUNC_ADD);
-			gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		switch(blend_mode){
+			case BlendMode.DEFAULT: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.ADD: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.SUBTRACT: {
+				gl.blendEquation(gl.FUNC_REVERSE_SUBTRACT);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE, gl.ZERO, gl.ONE);
+				break;
+			}
+			case BlendMode.MULTIPLY: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA); // fun fact if you do the math everything cancels out so that the destination alpha doesn't change at all.
+				break;
+			}
+			case BlendMode.INSET_OVERLAY: {
+				// TODO figure out if this is actually right
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFuncSeparate(gl.ONE, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE)
+				break;
+			}
+			case BlendMode.ALPHA: {
+				gl.blendEquation(gl.FUNC_ADD);
+				//gl.blendFuncSeparate(gl.DST_COLOR, gl.ZERO, gl.DST_ALPHA, gl.ZERO)
+				gl.blendFunc(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			case BlendMode.ALPHA_INVERTED: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.SRC_COLOR, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
+			//Just in case there's a weird value we'll use the default
+			default: {
+				gl.blendEquation(gl.FUNC_ADD);
+				gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+				break;
+			}
 		}
 	}
 
@@ -376,6 +411,20 @@ export class DemoPlayerGlHolder {
 			this.gl2.bindVertexArray(shader.vao);
 		} else {
 			this.update_vertex_attrib_arrays(...shader.all_attrib_arrays);
+		}
+	}
+
+	set_active_texture(plane: number): void{
+		const gl = this.gl;
+		let tex_to_activate : number = gl.TEXTURE0;
+		if(plane > Planes.GAME_PLANE){
+			console.log("activating texture 1 for a lighting plane", plane)
+			tex_to_activate = gl.TEXTURE1;
+		}
+		gl.activeTexture(tex_to_activate);
+		if(!this.texture_layers.includes(tex_to_activate)){
+			
+			this.texture_layers.push(tex_to_activate);
 		}
 	}
 

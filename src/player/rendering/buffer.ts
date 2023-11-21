@@ -1,5 +1,5 @@
 import { Appearance } from "../../misc/appearance";
-import { MAX_LAYER } from "../../misc/constants";
+import { AppearanceAttributeIndex, MAX_LAYER } from "../../misc/constants";
 import { Matrix, matrix_multiply, matrix_translate } from "../../misc/matrix";
 import { DmiAtlas } from "./atlas";
 import { RenderingCmd } from "./commands";
@@ -14,7 +14,8 @@ type AppearanceLike = {
 	pixel_w? : number,
 	color_alpha? : number,
 	color_matrix? : Float32Array|null,
-	layer : number
+	layer : number,
+	plane : number,
 };
 
 export class DrawBuffer {
@@ -28,13 +29,13 @@ export class DrawBuffer {
 		let stride = this.get_stride();
 		let off = index * stride;
 		let fa = this.float_attribs;
-		fa[off] = 1;
-		fa[off+1] = 0;
-		fa[off+2] = 0;
-		fa[off+3] = 0;
-		fa[off+4] = 1;
-		fa[off+5] = 0;
-		let matrix_view = fa.subarray(off,off+6);
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_A] = 1;
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_B] = 0;
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_C] = 0;
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_D] = 0;
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_E] = 1;
+		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_F] = 0;
+		let matrix_view = fa.subarray(off,off+AppearanceAttributeIndex.ICON_BOUND_X_1);
 		let icon_width = node?.width ?? 32;
 		let icon_height = node?.height ?? 32;
 		matrix_translate(matrix_view, -icon_width/2, -icon_height/2);
@@ -42,57 +43,58 @@ export class DrawBuffer {
 		matrix_translate(matrix_view, icon_width/2, icon_height/2);
 		matrix_translate(matrix_view, step_x + (appearance?.pixel_x??0) + (appearance?.pixel_w??0), step_y + (appearance?.pixel_y??0) + (appearance?.pixel_z??0));
 		if(node) {
-			fa[off+6] = node.x;
-			fa[off+7] = node.y;
-			fa[off+8] = node.x+node.width;
-			fa[off+9] = node.y+node.height;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_X_1] = node.x;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_Y_1] = node.y;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_X_2] = node.x+node.width;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_Y_2] = node.y+node.height;
 		} else {
-			fa[off+6] = 0;
-			fa[off+7] = 0;
-			fa[off+8] = 32;
-			fa[off+9] = 32;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_X_1] = 0;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_Y_1] = 0;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_X_2] = 32;
+			fa[off+AppearanceAttributeIndex.ICON_BOUND_Y_2] = 32;
 		}
-		fa[off+10] = 1-Math.max(Math.min(appearance.layer / MAX_LAYER, 1), 0);
+		fa[off+AppearanceAttributeIndex.ICON_LAYER] = 1-Math.max(Math.min(appearance.layer / MAX_LAYER, 1), 0);
+		fa[off+AppearanceAttributeIndex.ICON_PLANE] = appearance.plane;
 		let color_alpha = appearance.color_alpha ?? -1;
 		if(this.uses_color_matrices) {
 			if(appearance.color_matrix) {
-				fa.set(appearance.color_matrix, off+11);
+				fa.set(appearance.color_matrix, off+AppearanceAttributeIndex.COLOR_MATRIX_RED);
 			} else {
-				fa[off+11] = (color_alpha & 0xFF) / 0xFF;
-				fa[off+12] = 0;
-				fa[off+13] = 0;
-				fa[off+14] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED				] = (color_alpha & 0xFF) / 0xFF;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED_GREEN		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED_BLUE			] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED_ALPHA		] = 0;
 
-				fa[off+15] = 0;
-				fa[off+16] = ((color_alpha >> 8) & 0xFF) / 0xFF;
-				fa[off+17] = 0;
-				fa[off+18] = 0;
-
-				fa[off+19] = 0;
-				fa[off+20] = 0;
-				fa[off+21] = ((color_alpha >> 16) & 0xFF) / 0xFF;
-				fa[off+22] = 0;
-
-				fa[off+23] = 0;
-				fa[off+24] = 0;
-				fa[off+25] = 0;
-				fa[off+26] = ((color_alpha >> 24) & 0xFF) / 0xFF;
-
-				fa[off+27] = 0;
-				fa[off+28] = 0;
-				fa[off+29] = 0;
-				fa[off+30] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_GREEN_RED		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_GREEN			] = ((color_alpha >> 8) & 0xFF) / 0xFF;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_GREEN_BLUE		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_GREEN_ALPHA		] = 0;
+ 
+ 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_BLUE_RED			] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_BLUE_GREEN		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_BLUE				] = ((color_alpha >> 16) & 0xFF) / 0xFF;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_BLUE_ALPHA		] = 0;
+ 
+ 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_ALPHA_RED		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_ALPHA_GREEN		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_ALPHA_BLUE		] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_ALPHA_ALPHA		] = ((color_alpha >> 24) & 0xFF) / 0xFF;
+ 
+ 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_COMPONENT_RED	] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_COMPONENT_GREEN	] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_COMPONENT_BLUE	] = 0;
+				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_COMPONENT_ALPHA	] = 0;
 			}
 		} else {
-			fa[off+11] = (color_alpha & 0xFF) / 0xFF;
-			fa[off+12] = ((color_alpha >> 8) & 0xFF) / 0xFF;
-			fa[off+13] = ((color_alpha >> 16) & 0xFF) / 0xFF;
-			fa[off+14] = ((color_alpha >> 24) & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_RED] = (color_alpha & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_GREEN] = ((color_alpha >> 8) & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_BLUE] = ((color_alpha >> 16) & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_ALPHA] = ((color_alpha >> 24) & 0xFF) / 0xFF;
 		}
 	}
 
 	get_stride() {
-		return this.uses_color_matrices ? 31 : 15;
+		return this.uses_color_matrices ? 32 : 16;
 	}
 	get_size() {
 		return Math.floor(this.float_attribs.length / this.get_stride());
@@ -107,6 +109,7 @@ export class DrawBuffer {
 		if(start >= end) return;
 		let stride = this.get_stride();
 		let slice = this.float_attribs.slice(start * stride, end * stride);
+		//console.log("draw buffer", this)
 		out.push({
 			cmd: "batchdraw",
 			atlas_index: this.atlas?.tex_index ?? 0,
@@ -116,5 +119,6 @@ export class DrawBuffer {
 			transferables: [slice.buffer],
 			num_elements: end-start
 		});
+		//console.log("Renderingcmd object", out)
 	}
 }
