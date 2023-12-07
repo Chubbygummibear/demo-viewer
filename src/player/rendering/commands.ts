@@ -67,6 +67,7 @@ export interface CmdBatchDraw extends BaseRenderingCmd {
 	cmd: "batchdraw";
 	atlas_index: number;
 	blend_mode: number;
+	plane: number;
 	use_color_matrix : boolean;
 	data: Float32Array;
 	num_elements: number;

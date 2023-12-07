@@ -1,10 +1,10 @@
 import { DemoPlayerUi } from "../ui";
 import { not_null } from "../../misc/gl_util";
-import { CopyShader, get_copy_shader, get_icon_shader, IconShader, ShaderHolder } from "./shader";
+import { BlendingShader, CopyShader, get_copy_shader, get_icon_shader, get_blending_shader, IconShader, ShaderHolder } from "./shader";
 import { RenderingCmd } from "../../player/rendering/commands";
 import { ViewportElement } from "../viewport";
 import { render_maptext } from "./maptext";
-import { AppearanceAttributeIndex, BlendMode, Planes } from "../../misc/constants";
+import { AppearanceAttributeIndex, BlendMode, Planes, TexturePlanes } from "../../misc/constants";
 
 export class DemoPlayerGlHolder {
 	gl : WebGLRenderingContext;
@@ -17,10 +17,16 @@ export class DemoPlayerGlHolder {
 	max_texture_size : number;
 	copy_framebuffer : WebGLFramebuffer;
 	white_texture : WebGLTexture;
+	gameworld_texture : WebGLTexture;
+	emissives_texture : WebGLTexture;
+	lighting_texture : WebGLTexture;
+	
+	layering_framebuffer : WebGLFramebuffer;
 
 	shader : IconShader;
 	shader_matrix : IconShader;
 	shader_copy : CopyShader;
+	blending_shader : BlendingShader;
 
 	texture_layers: number[] = [];
 
@@ -55,6 +61,27 @@ export class DemoPlayerGlHolder {
 		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
 		gl.bindTexture(gl.TEXTURE_2D, null);
 		this.copy_framebuffer = not_null(gl.createFramebuffer());
+
+		gl.activeTexture(gl.TEXTURE0 + TexturePlanes.GAME_PLANE);
+		this.gameworld_texture = not_null(gl.createTexture());
+		gl.bindTexture(gl.TEXTURE_2D, this.gameworld_texture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
+		
+		gl.activeTexture(gl.TEXTURE0 + TexturePlanes.EMISSIVES_PLANE);
+		this.emissives_texture = not_null(gl.createTexture());
+		gl.bindTexture(gl.TEXTURE_2D, this.emissives_texture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
+
+		gl.activeTexture(gl.TEXTURE0 + TexturePlanes.LIGHTING_PLANE);
+		this.lighting_texture = not_null(gl.createTexture());
+		gl.bindTexture(gl.TEXTURE_2D, this.lighting_texture);
+		gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
+		this.layering_framebuffer = not_null(gl.createFramebuffer());
+		//gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lighting_texture, 0);
+		
+		
+		gl.activeTexture(gl.TEXTURE0 + TexturePlanes.CANVAS);
+		
 		this.max_texture_size = Math.min(gl.getParameter(gl.MAX_TEXTURE_SIZE), 32768);
 
 		this.square_buffer = not_null(gl.createBuffer());
@@ -67,6 +94,7 @@ export class DemoPlayerGlHolder {
 		this.shader = get_icon_shader(gl, false);
 		this.shader_matrix = get_icon_shader(gl, true);
 		this.shader_copy = get_copy_shader(gl);
+		this.blending_shader = get_blending_shader(gl);
 
 		this.viewport_canvas = {
 			x:0,
@@ -105,8 +133,8 @@ export class DemoPlayerGlHolder {
 		if(gl.canvas.height < target_canvas_height) gl.canvas.height = Math.ceil(target_canvas_height);
 
 		let flushables : ((bmp:ImageBitmap|HTMLCanvasElement) => Promise<void>)[] = [];
-		if(frame_data.length>0)
-			console.log("frame data of process_frame_data", frame_data);
+		// if(frame_data.length>0)
+		// 	console.log("frame data of process_frame_data", frame_data);
 
 		for(let cmd of frame_data) {
 			/*gl.flush();
@@ -229,13 +257,48 @@ export class DemoPlayerGlHolder {
 				gl.enable(gl.SCISSOR_TEST);
 			} else if(cmd.cmd == "batchdraw") {
 				let tex = not_null(this.atlas_textures[cmd.atlas_index]);
-				this.set_active_texture(cmd.data[AppearanceAttributeIndex.ICON_PLANE]);
+				//this.set_active_texture(cmd.data[AppearanceAttributeIndex.ICON_PLANE]);
+				gl.activeTexture(gl.TEXTURE0);
 				this.set_blend_mode(cmd.blend_mode);
 				let shader = cmd.use_color_matrix ? this.shader_matrix : this.shader;
 				this.set_shader(shader);
+				
+				
+				// if(cmd.data[AppearanceAttributeIndex.ICON_PLANE] != Planes.LIGHTING_PLANE && cmd.data[AppearanceAttributeIndex.ICON_PLANE] > Planes.GAME_PLANE)
+				// 	console.log("not game plane icon", cmd.data)
+
+				if(cmd.plane > Planes.GAME_PLANE && cmd.plane != Planes.LIGHTING_PLANE){
+					console.log("setting framebuffer to emissives texture", cmd.plane)
+					gl.bindFramebuffer(gl.FRAMEBUFFER, this.layering_framebuffer);
+					gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.emissives_texture, 0);
+					
+					//gl.bindTexture(gl.TEXTURE_2D, this.lighting_texture);
+					//gl.uniform1i(shader.u_is_light, 0);
+					//gl.viewport(0, 0, tex.width, tex.height);
+				}
+				else if(cmd.plane == Planes.LIGHTING_PLANE){
+					console.log("setting framebuffer to lighting and dark texture", cmd.plane)
+					gl.bindFramebuffer(gl.FRAMEBUFFER, this.layering_framebuffer);
+					gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lighting_texture, 0);
+					
+					//gl.bindTexture(gl.TEXTURE_2D, this.lighting_texture);
+					//gl.viewport(0, 0, tex.width, tex.height);
+					//gl.uniform1i(shader.u_is_light, 1);
+					// console.log(gl.checkFramebufferStatus(gl.FRAMEBUFFER));
+					// const msg = gl.getFramebufferAttachmentParameter(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.FRAMEBUFFER_ATTACHMENT_OBJECT_NAME);
+					// console.log(msg);
+				}
+				else {
+					
+					//console.log("setting framebuffer to gameworld texture", cmd.data[AppearanceAttributeIndex.ICON_PLANE])
+					gl.bindFramebuffer(gl.FRAMEBUFFER, this.layering_framebuffer);
+					gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.gameworld_texture, 0);
+					//gl.uniform1i(shader.u_is_light, 0);	
+				}
 
 				gl.bindTexture(gl.TEXTURE_2D, tex.texture);
-				gl.uniform1i(shader.u_texture, 0);
+				gl.uniform1i(shader.u_texture, TexturePlanes.CANVAS);
+				//gl.uniform1i(shader.u_emissives_texture, TexturePlanes.LIGHTING_PLANE);
 				gl.uniform2f(shader.u_texture_size, tex.width, tex.height);
 				gl.uniform2f(shader.u_viewport_size, curr_viewport.width*icon_width, curr_viewport.height*icon_height);
 				gl.uniform2f(shader.u_viewport_center, (curr_viewport.x+curr_viewport.width/2)*icon_width, (curr_viewport.y+curr_viewport.height/2)*icon_height);
@@ -251,6 +314,7 @@ export class DemoPlayerGlHolder {
 				gl.vertexAttribPointer(shader.a_transform_y, 3, gl.FLOAT, false, stride, AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_E*3);
 				gl.vertexAttribPointer(shader.a_uv, 4, gl.FLOAT, false, stride, AppearanceAttributeIndex.ICON_BOUND_X_1*4);
 				gl.vertexAttribPointer(shader.a_layer, 1, gl.FLOAT, false, stride, AppearanceAttributeIndex.ICON_LAYER*4);
+				gl.vertexAttribPointer(shader.a_plane, 1, gl.FLOAT, false, stride, AppearanceAttributeIndex.ICON_PLANE*4);
 				for(let i = 0; i < shader.a_color.length; i++)
 					gl.vertexAttribPointer(shader.a_color[i], 4, gl.FLOAT, false, stride, AppearanceAttributeIndex.COLOR_MATRIX_RED*4 + i*16);
 				ia.vertexAttribDivisorANGLE(shader.a_position, 0);
@@ -260,8 +324,9 @@ export class DemoPlayerGlHolder {
 				ia.vertexAttribDivisorANGLE(shader.a_transform_x, 1);
 				ia.vertexAttribDivisorANGLE(shader.a_transform_y, 1);
 				ia.vertexAttribDivisorANGLE(shader.a_layer, 1);
+				ia.vertexAttribDivisorANGLE(shader.a_plane, 1);
 				ia.drawArraysInstancedANGLE(gl.TRIANGLES, 0, 6, cmd.num_elements);
-				//console.log("glHolder during batchdraw", cmd)
+				//console.log("bound framebuffer during batchdraw", gl.getParameter(gl.FRAMEBUFFER_BINDING));
 				gl.deleteBuffer(buf);
 			} else if(cmd.cmd == "copytoviewport") {
 				let this_viewport_pixel = curr_viewport_pixel;
@@ -307,6 +372,17 @@ export class DemoPlayerGlHolder {
 			} else if(cmd.cmd == "copytocanvas") {
 				let this_viewport_pixel = curr_viewport_pixel;
 				let canvas_index = cmd.canvas_index;
+				let shader = this.blending_shader;
+				gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				//gl.viewport(curr_viewport_pixel.x, curr_viewport_pixel.y, curr_viewport_pixel.width, curr_viewport_pixel.height);
+				gl.activeTexture(gl.TEXTURE0);
+				this.set_shader(shader);
+				gl.uniform1i(shader.u_game_texture, TexturePlanes.GAME_PLANE);
+				gl.uniform1i(shader.u_emissives_texture, TexturePlanes.EMISSIVES_PLANE);
+				gl.uniform1i(shader.u_lighting_texture, TexturePlanes.LIGHTING_PLANE);
+				//gl.uniform2f(shader.u_texture_size, tex.width, tex.height);
+				gl.drawArrays(gl.TRIANGLES, 0, 6);
+				
 				flushables.push(async (canvas_bitmap : ImageBitmap|HTMLCanvasElement) => {
 					let bitmap = await createImageBitmap(canvas_bitmap, this_viewport_pixel.x, gl.canvas.height-this_viewport_pixel.height-this_viewport_pixel.y, this_viewport_pixel.width, this_viewport_pixel.height);
 					let canvas = canvas_list[canvas_index];
@@ -318,6 +394,13 @@ export class DemoPlayerGlHolder {
 					ctx.drawImage(bitmap, 0, 0);
 				});
 			} else if(cmd.cmd == "flush") {
+				// let this_viewport_pixel = curr_viewport_pixel;
+				// let shader = this.shader_copy;
+				// this.set_shader(shader);
+				// gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+				// this.set_blend_mode(BlendMode.MULTIPLY);
+				// gl.activeTexture(gl.TEXTURE0 + TexturePlanes.LIGHTING_PLANE);
+
 				//console.log("attempting flush", this);
 				if(flushables.length) {
 					let canvas_bitmap = flushables.length == 1 ? gl.canvas : await createImageBitmap(gl.canvas);
@@ -346,6 +429,7 @@ export class DemoPlayerGlHolder {
 	// this one was fun - I made test cases in BYOND and took screenshots and tried to reverse-engineer the blending equations from that.
 	// fun fact BYOND uses premultiplied alpha. However, when you 
 	set_blend_mode(blend_mode : number) : void{
+		//if(blend_mode == 0) blend_mode = 1;
 		if(blend_mode == this.curr_blend_mode) return;
 		this.curr_blend_mode = blend_mode;
 		const gl = this.gl;
@@ -416,17 +500,47 @@ export class DemoPlayerGlHolder {
 
 	set_active_texture(plane: number): void{
 		const gl = this.gl;
-		let tex_to_activate : number = gl.TEXTURE0;
-		if(plane > Planes.GAME_PLANE){
-			console.log("activating texture 1 for a lighting plane", plane)
-			tex_to_activate = gl.TEXTURE1;
+		let texture_to_activate : number = gl.TEXTURE0 + TexturePlanes.GAME_PLANE;
+		if(plane > Planes.GAME_PLANE && plane != Planes.LIGHTING_PLANE){
+			//console.log("activating texture 1 for an emissive", plane)
+			texture_to_activate = gl.TEXTURE0 + TexturePlanes.LIGHTING_PLANE;
+			//this.setFramebuffer(this.lighting_framebuffer);
+			//gl.bindFramebuffer(gl.FRAMEBUFFER, this.lighting_framebuffer);
 		}
-		gl.activeTexture(tex_to_activate);
-		if(!this.texture_layers.includes(tex_to_activate)){
+		else if(plane == Planes.LIGHTING_PLANE){
+			//console.log("activating texture 2 for the lighting to multiply", plane)
+			texture_to_activate = gl.TEXTURE0 + TexturePlanes.GAME_PLANE;
+			//this.setFramebuffer(this.lighting_framebuffer)
+			//gl.bindFramebuffer(gl.FRAMEBUFFER, this.lighting_framebuffer);
+		}
+		else {
+			texture_to_activate = gl.TEXTURE0 + TexturePlanes.GAME_PLANE
+			//this.setFramebuffer(null)
+			//gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		}
+		gl.activeTexture(texture_to_activate);
+		// if(!this.texture_layers.includes(texture_to_activate)){
+		// 	var texture = gl.createTexture();
+		// 	gl.bindTexture(gl.TEXTURE_2D, texture);
+		// 	gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255,255,255,255]));
+		// 	// Set the parameters so we can render any size image.
+		// 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+		// 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		// 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+		// 	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
 			
-			this.texture_layers.push(tex_to_activate);
-		}
+		// 	this.texture_layers.push(texture_to_activate);
+		// }
+		//gl.bindTexture(gl.TEXTURE_2D, texture_to_activate);
 	}
+	
+	// setFramebuffer(fbo : WebGLFramebuffer | null) {
+	// 	const gl = this.gl;
+	// 	// make this the framebuffer we are rendering to.
+	// 	gl.bindFramebuffer(gl.FRAMEBUFFER, fbo);
+	// 	gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.texture, 0);
+	 
+	//   }
 
 	update_vertex_attrib_arrays(...arrays : number[]) : void {
 		const gl = this.gl;
@@ -448,10 +562,13 @@ export class DemoPlayerGlHolder {
 
 	dump_textures() {
 		const gl = this.gl;
+		console.log("this at dump", this);
 		let urls = this.atlas_textures.map(tex => {
 			if(!tex) return null;
 			gl.bindFramebuffer(gl.FRAMEBUFFER, this.copy_framebuffer);
 			gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex.texture, 0);
+			// gl.bindFramebuffer(gl.FRAMEBUFFER, this.lighting_framebuffer);
+			// gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, this.lighting_texture, 0);
 			//let buf = new Uint8Array(tex.width*tex.height*4);
 			let image_data = new ImageData(tex.width, tex.height);
 			gl.readPixels(0, 0, tex.width, tex.height, gl.RGBA, gl.UNSIGNED_BYTE, image_data.data);

@@ -1,5 +1,5 @@
 import { IconStateDir } from "../player/rendering/icon";
-import { Planes, RESET_ALPHA, RESET_COLOR, RESET_TRANSFORM } from "./constants";
+import { BlendMode, Planes, RESET_ALPHA, RESET_COLOR, RESET_TRANSFORM } from "./constants";
 import { Matrix, matrix_invert, matrix_is_identity, matrix_multiply } from "./matrix";
 
 export enum FilterType {
@@ -249,18 +249,35 @@ export namespace Appearance {
 		});
 		
 		//now combine the arrays with regular layers first.
-		const appearances_to_sort = regular_layers.concat(float_layers);
+		appearance.overlays = regular_layers.concat(float_layers);
+		const appearances_to_sort = [...appearance.overlays];
 		
 		//Resume monster's code
-
+		// if(appearance.name?.includes("console")){
+		// 	console.log("console", appearance)
+		// }
 		for(let overlay of appearances_to_sort) {
+			// if(appearance.name?.includes("console")){
+			// 	console.log("overlay in list", overlay, appearances_to_sort)
+			// }
 			overlay = overlay_inherit(appearance, overlay);
+			
 			if(resolve_plane(overlay.plane, appearance.plane) != resolve_plane(appearance.plane)) {
+				// if(appearance.name?.includes("console")){
+				// 	console.log("pushing to float appearance", overlay)
+				// }
 				float_appearances.push(overlay);
+				// appearances.splice(appearances.indexOf(overlay), 1);
 			} else {
 				appearances.push(...get_appearance_parts(overlay));
+				// if(appearance.name?.includes("console")){
+				// 	console.log("pushing to appearances", overlay)
+				// }
 			}
 		}
+		// if(appearance.name?.includes("console")){
+		// 	console.log("console post sort", appearances, float_appearances)
+		// }
 		appearance.sorted_appearances = appearances;
 		appearance.floating_appearances = float_appearances.length ? float_appearances : empty_arr;
 		return appearances;
@@ -268,18 +285,22 @@ export namespace Appearance {
 
 	export function overlay_inherit(appearance : Appearance, overlay : Appearance) {
 		let cloned = false;
+		let reason = "";
 		let clone = () => {
 			if(!cloned) {
+				//console.log("cloning overlay", overlay);
 				cloned = true;
 				overlay = {...overlay};
 			}
 		}
 		if(overlay.dir != appearance.dir && !overlay.dir_override) {
 			clone();
+			reason = "dir override";
 			overlay.dir = appearance.dir;
 		}
 		if(appearance.pixel_x || appearance.pixel_y || appearance.pixel_z || appearance.pixel_w && !(overlay.appearance_flags & RESET_TRANSFORM)) {
 			clone();
+			reason = "pixel offset";
 			overlay.pixel_x += appearance.pixel_x;
 			overlay.pixel_y += appearance.pixel_y;
 			overlay.pixel_z += appearance.pixel_z;
@@ -287,16 +308,19 @@ export namespace Appearance {
 		}
 		if(!(overlay.appearance_flags & RESET_TRANSFORM) && !matrix_is_identity(appearance.transform)) {
 			clone();
+			reason = "transform";
 			overlay.transform = [...overlay.transform];
 			matrix_multiply(overlay.transform, appearance.transform);
 		}
 		if((appearance.color_alpha & 0xFF000000) != 0xFF000000 && !(overlay.appearance_flags & RESET_ALPHA)) {
 			clone();
+			reason = "reset alpha";
 			let alpha = Math.round((appearance.color_alpha >>> 24) * (overlay.color_alpha >>> 24) / 255);
 			overlay.color_alpha = (overlay.color_alpha & 0xFFFFFF) | (alpha << 24);
 		}
 		if((appearance.color_alpha & 0xFFFFFF) != 0xFFFFFF && !(overlay.appearance_flags & RESET_COLOR)) {
 			clone();
+			reason = "reset color";
 			let color_alpha = overlay.color_alpha & 0xFF000000;
 			for(let i = 0; i < 24; i += 8) {
 				let color = Math.round(((appearance.color_alpha >>> i) & 0xFF) * ((overlay.color_alpha >>> i) & 0xFF) / 255)
@@ -304,14 +328,19 @@ export namespace Appearance {
 			}
 			overlay.color_alpha = color_alpha;
 		}
-		if(overlay.blend_mode == 0 && appearance.blend_mode > 0) {
+		if(overlay.blend_mode == BlendMode.DEFAULT && appearance.blend_mode > BlendMode.DEFAULT) {
 			clone();
+			reason = "blend mode";
 			overlay.blend_mode = appearance.blend_mode;
 		}
 		if(overlay.plane < Planes.LOWEST_EVER_PLANE || overlay.plane > Planes.HIGHEST_EVER_PLANE) {
 			clone();
+			reason = "plane reset. Overlay plane: " + overlay.plane;
 			overlay.plane = resolve_plane(overlay.plane, appearance.plane);
 		}
+		// if(appearance.name?.includes("console")){
+		// 	console.log("cloned overlay?", cloned, reason)
+		// }
 		return overlay;
 	}
 

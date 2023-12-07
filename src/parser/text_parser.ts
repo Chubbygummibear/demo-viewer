@@ -358,18 +358,22 @@ export class DemoParserText extends DemoParser {
 		if(p.curr() != ';') {
 			appearance.plane = p.read_number();
 			switch(appearance.plane){
-				case Planes.EMISSIVE_BLOCKER_PLANE: { 
-				   appearance.blend_mode = BlendMode.SUBTRACT;
-				   break; 
-				} 
-				case Planes.LIGHTING_PLANE: { 
-				   appearance.blend_mode = BlendMode.ALPHA; 
-				   break; 
-				}
-				case Planes.O_LIGHTING_VISUAL_PLANE: { 
-				   appearance.blend_mode = BlendMode.ALPHA_INVERTED; 
-				   break; 
-				}
+				// case Planes.EMISSIVE_BLOCKER_PLANE: { 
+				//    appearance.blend_mode = BlendMode.DEFAULT;
+				//    break; 
+				// }
+				// case Planes.EMISSIVE_PLANE: { 
+				// 	appearance.blend_mode = BlendMode.DEFAULT;
+				// 	break; 
+				//  } 
+				// case Planes.LIGHTING_PLANE: { 
+				//    appearance.blend_mode = BlendMode.DEFAULT; 
+				//    break; 
+				// }
+				// case Planes.O_LIGHTING_VISUAL_PLANE: { 
+				//    appearance.blend_mode = BlendMode.DEFAULT; 
+				//    break; 
+				// }
 				default: { 
 				   appearance.blend_mode = BlendMode.DEFAULT;
 				   break; 

@@ -28,6 +28,7 @@ export interface IconShader extends ShaderHolder {
 	a_color : GLint[];
 	a_uv : GLint;
 	a_layer : GLint;
+	a_plane : GLint;
 	u_texture : WebGLUniformLocation;
 	u_texture_size : WebGLUniformLocation;
 	u_viewport_size : WebGLUniformLocation;
@@ -41,6 +42,17 @@ export interface CopyShader extends ShaderHolder {
 	a_from : GLint;
 	a_to : GLint;
 	u_texture : WebGLUniformLocation;
+	u_texture_size : WebGLUniformLocation;
+}
+
+export interface BlendingShader extends ShaderHolder {
+	a_position : GLint;
+	a_size : GLint;
+	a_from : GLint;
+	a_to : GLint;
+	u_game_texture: WebGLUniformLocation;
+	u_emissives_texture: WebGLUniformLocation;
+	u_lighting_texture: WebGLUniformLocation;
 	u_texture_size : WebGLUniformLocation;
 }
 
@@ -114,6 +126,7 @@ export function get_icon_shader(gl : WebGLRenderingContext, attribute_color_matr
 		a_color: color_thingy,
 		a_uv: gl.getAttribLocation(program, "a_uv"),
 		a_layer: gl.getAttribLocation(program, "a_layer"),
+		a_plane: gl.getAttribLocation(program, "a_plane"),
 		u_texture: not_null(gl.getUniformLocation(program, `u_texture`)),
 		u_texture_size: not_null(gl.getUniformLocation(program, 'u_texture_size')),
 		u_viewport_size: not_null(gl.getUniformLocation(program, "u_viewport_size")),
@@ -122,7 +135,7 @@ export function get_icon_shader(gl : WebGLRenderingContext, attribute_color_matr
 		vao: null,
 		all_attrib_arrays: []
 	};
-	out.all_attrib_arrays.push(out.a_position, out.a_transform_x, out.a_transform_y, ...out.a_color, out.a_uv, out.a_layer);
+	out.all_attrib_arrays.push(out.a_position, out.a_transform_x, out.a_transform_y, ...out.a_color, out.a_uv, out.a_layer, out.a_plane);
 	out.vao = create_vao(gl, out.all_attrib_arrays);
 	return out;
 }
@@ -204,13 +217,65 @@ function compile_shader(gl : WebGLRenderingContext, code:string, type:number) : 
 	return shader;
 }
 
-function compile_shader_program(gl : WebGLRenderingContext, vertex_code:string, fragment_code:string) : WebGLProgram {
+function compile_shader_program(gl : WebGLRenderingContext, vertex_code:string|null, fragment_code:string|null) : WebGLProgram {
 	let program = not_null(gl.createProgram());
-	gl.attachShader(program, compile_shader(gl, vertex_code, gl.VERTEX_SHADER));
-	gl.attachShader(program, compile_shader(gl, fragment_code, gl.FRAGMENT_SHADER));
+	if(vertex_code){
+		gl.attachShader(program, compile_shader(gl, vertex_code, gl.VERTEX_SHADER));
+	}
+	if(fragment_code){
+		gl.attachShader(program, compile_shader(gl, fragment_code, gl.FRAGMENT_SHADER));
+	}
 	gl.linkProgram(program);
 	if(!gl.getProgramParameter(program, gl.LINK_STATUS)) {
 		throw new Error(gl.getProgramInfoLog(program) ?? "unknown shader error");
 	}
 	return program;
+}
+
+export function get_blending_shader(gl : WebGLRenderingContext) : BlendingShader {
+	let program = compile_shader_program(gl, `
+	precision mediump float;
+	attribute vec2 a_position;
+	attribute vec2 a_size;
+	attribute vec2 a_from;
+	attribute vec2 a_to;
+	uniform vec2 u_texture_size;
+	varying vec2 v_uv;
+	void main() {
+		v_uv = (a_size * a_position + a_from) / u_texture_size;
+		gl_Position = vec4((mix(vec2(0,0), a_size, a_position) + a_to) / u_texture_size * 2.0 - vec2(1,1), 0, 1.0);
+	}
+	`,`
+	precision mediump float;
+	uniform sampler2D game_texture;
+	uniform sampler2D emissives_texture;
+	uniform sampler2D lighting_texture;
+	varying vec2 v_uv;
+	uniform vec2 u_texture_size;
+	void main() {
+		vec2 tex_size = vec2(textureSize(game_texture, 0));
+		vec4 game_color = texture2D(game_texture, gl_FragCoord.xy / tex_size);
+		vec4 emissive_color = texture2D(emissives_texture, gl_FragCoord.xy / tex_size);
+    	vec4 lighting_color = texture2D(lighting_texture, gl_FragCoord.xy / tex_size);
+
+		vec4 resultColor = game_color * (lighting_color + emissive_color);
+
+		gl_FragColor = resultColor;
+	}`);
+	let out:BlendingShader = {
+		shader: program,
+		a_position: gl.getAttribLocation(program, "a_position"),
+		a_from: gl.getAttribLocation(program, "a_from"),
+		a_to: gl.getAttribLocation(program, "a_to"),
+		a_size: gl.getAttribLocation(program, "a_size"),
+		u_game_texture: gl.getAttribLocation(program, "game_texture"),
+		u_emissives_texture: gl.getAttribLocation(program, "emissives_texture"),
+		u_lighting_texture: not_null(gl.getUniformLocation(program, `lighting_texture`)),
+		u_texture_size: not_null(gl.getUniformLocation(program, 'u_texture_size')),
+		vao: null,
+		all_attrib_arrays: []
+	};
+	out.all_attrib_arrays.push(out.a_position,out.a_from,out.a_to,out.a_size);
+	out.vao = create_vao(gl, out.all_attrib_arrays);
+	return out;
 }

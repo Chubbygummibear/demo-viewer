@@ -1,5 +1,5 @@
 import { Appearance } from "../../misc/appearance";
-import { AppearanceAttributeIndex, MAX_LAYER } from "../../misc/constants";
+import { AppearanceAttributeIndex, BlendMode, MAX_LAYER, Planes } from "../../misc/constants";
 import { Matrix, matrix_multiply, matrix_translate } from "../../misc/matrix";
 import { DmiAtlas } from "./atlas";
 import { RenderingCmd } from "./commands";
@@ -20,15 +20,18 @@ type AppearanceLike = {
 
 export class DrawBuffer {
 	uses_color_matrices : boolean = false;
-	blend_mode : number = 1;
+	blend_mode : number = BlendMode.DEFAULT;
 	atlas : DmiAtlas|undefined;
+	plane : number = Planes.GAME_PLANE;
 
 	float_attribs : Float32Array = new Float32Array(1024 * this.get_stride());
 
 	write_appearance(index : number, appearance : AppearanceLike, step_x : number = 0, step_y : number = 0, node = appearance.icon_state_dir?.atlas_node) {
 		let stride = this.get_stride();
+		
 		let off = index * stride;
 		let fa = this.float_attribs;
+		//https://www.byond.com/docs/ref/#/matrix
 		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_A] = 1;
 		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_B] = 0;
 		fa[off+AppearanceAttributeIndex.TRANSFORMATION_MATRIX_3x3_C] = 0;
@@ -60,6 +63,7 @@ export class DrawBuffer {
 			if(appearance.color_matrix) {
 				fa.set(appearance.color_matrix, off+AppearanceAttributeIndex.COLOR_MATRIX_RED);
 			} else {
+				//https://www.byond.com/docs/ref/#/{notes}/color-matrix
 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED				] = (color_alpha & 0xFF) / 0xFF;
 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED_GREEN		] = 0;
 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_RED_BLUE			] = 0;
@@ -86,9 +90,9 @@ export class DrawBuffer {
 				fa[off + AppearanceAttributeIndex.COLOR_MATRIX_COMPONENT_ALPHA	] = 0;
 			}
 		} else {
-			fa[off+AppearanceAttributeIndex.COLOR_RGBA_RED] = (color_alpha & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_RED	] = (color_alpha & 0xFF) / 0xFF;
 			fa[off+AppearanceAttributeIndex.COLOR_RGBA_GREEN] = ((color_alpha >> 8) & 0xFF) / 0xFF;
-			fa[off+AppearanceAttributeIndex.COLOR_RGBA_BLUE] = ((color_alpha >> 16) & 0xFF) / 0xFF;
+			fa[off+AppearanceAttributeIndex.COLOR_RGBA_BLUE	] = ((color_alpha >> 16) & 0xFF) / 0xFF;
 			fa[off+AppearanceAttributeIndex.COLOR_RGBA_ALPHA] = ((color_alpha >> 24) & 0xFF) / 0xFF;
 		}
 	}
@@ -114,11 +118,15 @@ export class DrawBuffer {
 			cmd: "batchdraw",
 			atlas_index: this.atlas?.tex_index ?? 0,
 			blend_mode: this.blend_mode,
+			plane: this.plane,
 			use_color_matrix: this.uses_color_matrices,
 			data: slice,
 			transferables: [slice.buffer],
 			num_elements: end-start
 		});
-		//console.log("Renderingcmd object", out)
+		// if(slice[AppearanceAttributeIndex.ICON_PLANE * stride] == 13){
+		// 	console.log("Renderingcmd object", out[out.length-1])
+		// }
+		
 	}
 }
